@@ -110,7 +110,7 @@ async function main(url, dir = process.cwd()) {
   console.log('Done.')
 }
 
-main(process.argv[3], process.argv[3]).catch(err => {
+if (!process.env.CI) main(process.argv[3], process.argv[3]).catch(err => {
   console.error(err + '')
   process.exitCode = 1
 })
