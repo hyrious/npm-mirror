@@ -33,7 +33,7 @@ Default: `http://registry.npmmirror.com` (A mirror of registry in China.)
 
 Despite of passing CLI arguments, it can also be configured with the environment variable `NPM_MIRROR_REGISTRY`.
 
-The CLI updates `.npmrc` and `package-lock-json` to use or not use the registry.
+The CLI updates `.npmrc` and `package-lock.json` to use or not use the registry.
 The trigger is whether `.npmrc` is configured to use that registry or there's at least one package using the registry in the lockfile.
 
 If the `.npmrc` has different registry configured, it throws an error.
