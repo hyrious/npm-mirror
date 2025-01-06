@@ -19,8 +19,6 @@ function findPackageLockFile(dir) {
     const parent = path.dirname(dir)
     if (parent != dir) {
       return findPackageLockFile(parent)
-    } else {
-      throw new Error('Not found package-lock.json')
     }
   }
 }
@@ -47,7 +45,7 @@ async function main(url, dir = process.cwd()) {
   const url2 = url.replace('http://registry.', 'https://registry.')
 
   // Resolve package-lock.json.
-  const lockFile = findPackageLockFile(root)
+  const lockFile = findPackageLockFile(root) || path.join(root, 'package-lock.json')
   const npmrcFile = path.join(lockFile, '../.npmrc')
 
   let isUsingMirror = false
