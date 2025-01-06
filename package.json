@@ -1,7 +1,7 @@
 {
   "name": "@hyrious/npm-mirror",
   "type": "module",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Use the registry secretly.",
   "author": "hyrious <hyrious@outlook.com>",
   "license": "MIT",
