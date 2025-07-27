@@ -2,24 +2,35 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-function deleteText(text, index, length) {
-  return text.slice(0, index) + text.slice(index + length).trimStart()
+function deleteLine(text, index) {
+  if (!text) return text
+  const endOfLine = text.indexOf('\n', index)
+  if (endOfLine >= 0) {
+    return text.slice(0, index) + text.slice(endOfLine + 1).trimStart()
+  } else {
+    return text.slice(0, index).trimEnd()
+  }
 }
 
-function readFileSync(file) {
+// Returns file content or '' if failed.
+function readFile(file) {
   try { return fs.readFileSync(file, 'utf8') }
   catch { return '' }
 }
 
-function findPackageLockFile(dir) {
-  const fullPath = path.join(dir, 'package-lock.json')
-  if (fs.existsSync(fullPath)) {
-    return fullPath
+// Returns [lockFilePath, isBun] or ['', false] if not found.
+function findLockFile(dir) {
+  let fullPath
+  if (fs.existsSync(fullPath = path.join(dir, 'package-lock.json'))) {
+    return [fullPath, false]
+  } else if (fs.existsSync(fullPath = path.join(dir, 'bun.lock'))) {
+    return [fullPath, true]
   } else {
     const parent = path.dirname(dir)
     if (parent != dir) {
-      return findPackageLockFile(parent)
+      return findLockFile(parent)
     }
+    return ['', false]
   }
 }
 
@@ -44,71 +55,77 @@ async function main(url, dir = process.cwd()) {
   // Always use HTTPS in lockfile, but skip addresses like in a local network.
   const url2 = url.replace('http://registry.', 'https://registry.')
 
-  // Resolve package-lock.json.
-  const lockFile = findPackageLockFile(root) || path.join(root, 'package-lock.json')
+  const [lockFile, isBun] = findLockFile(root) || path.join(root, 'package-lock.json')
   const npmrcFile = path.join(lockFile, '../.npmrc')
 
-  let isUsingMirror = false
+  let isUsingMirror = false, match, newNpmrc, newLockFile
 
   // Check .npmrc.
-  const npmrc = readFileSync(npmrcFile)
-  const matchLine = npmrc.match(/^registry=(.+)/)
-  if (matchLine) {
-    const userURL = matchLine[1].trim()
+  const originalNpmrc = readFile(npmrcFile)
+  if (match = originalNpmrc.match(/^registry=(.+)/m)) {
+    const userURL = match[1].trim()
     if (userURL == url) {
       isUsingMirror = true
     } else {
-      throw new Error('Using different registry ' + userURL)
+      console.error(`Warning: .npmrc registry URL "${userURL}" does not match the expected URL "${url}".`)
+      process.exit(1)
     }
   }
 
   // Check lockfile.
-  const contents = readFileSync(lockFile)
-  isUsingMirror ||= contents.includes(url2)
+  const originalLockFile = readFile(lockFile)
+  isUsingMirror ||= originalLockFile.includes(url2)
 
-  // Reset.
+  // Reset lockfile and .npmrc.
   if (isUsingMirror) {
-    console.log('Resetting default registry...')
+    console.info('Resetting default registry...')
     // Reset .npmrc.
-    if (matchLine) {
-      const newNPMRC = deleteText(npmrc, matchLine.index, matchLine[0].length)
-      if (newNPMRC) {
-        fs.writeFileSync(npmrcFile, newNPMRC)
-        console.log('Updated', path.relative(root, npmrcFile))
+    if (match) {
+      if (newNpmrc = deleteLine(originalNpmrc, match.index)) {
+        fs.writeFileSync(npmrcFile, newNpmrc)
+        console.info('Updated', path.relative(root, npmrcFile))
       } else {
         fs.unlinkSync(npmrcFile)
-        console.log('Deleted', path.relative(root, npmrcFile))
+        console.info('Deleted', path.relative(root, npmrcFile))
       }
     }
-    // Reset package-lock.json.
-    const newContents = contents.replaceAll(url2, 'https://registry.npmjs.org')
-    if (newContents) {
-      fs.writeFileSync(lockFile, newContents)
-      console.log('Updated', path.relative(root, lockFile))
+    // Reset lockfile.
+    if (isBun) {
+      const regex = new RegExp(`"${url2.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')}([^"]+)"`, 'g')
+      newLockFile = originalLockFile.replace(regex, '""')
+    } else {
+      newLockFile = originalLockFile.replaceAll(url2, 'https://registry.npmjs.org')
+    }
+    if (newLockFile !== originalLockFile) {
+      fs.writeFileSync(lockFile, newLockFile)
+      console.info('Updated', path.relative(root, lockFile))
     }
   }
 
   // Use mirror.
   else {
-    console.log('Enabling custom registry:', url)
+    console.info('Enabling custom registry:', url)
     // Update .npmrc.
-    const nl = npmrc.includes('\r') ? '\r\n' : '\n'
+    const nl = originalNpmrc.includes('\r') ? '\r\n' : '\n'
     const line = `registry=${url}${nl}`
-    const newNPMRC = npmrc ? [npmrc.trimEnd(), line].join(nl) : line
-    fs.writeFileSync(npmrcFile, newNPMRC)
-    console.log('Updated', path.relative(root, npmrcFile))
+    newNpmrc = originalNpmrc ? [originalNpmrc.trimEnd(), line].join(nl) : line
+    fs.writeFileSync(npmrcFile, newNpmrc)
+    console.info('Updated', path.relative(root, npmrcFile))
     // Update package-lock.json.
-    const newContents = contents.replaceAll('https://registry.npmjs.org', url2)
-    if (newContents) {
-      fs.writeFileSync(lockFile, newContents)
-      console.log('Updated', path.relative(root, lockFile))
+    if (isBun) {
+      console.info('Does not support updating bun.lock yet.')
+      console.info('You can enable the mirror by setting NPM_CONFIG_REGISTRY=' + url + ' in your environment.')
+    } else {
+      newLockFile = originalLockFile.replaceAll('https://registry.npmjs.org', url2)
+      fs.writeFileSync(lockFile, newLockFile)
+      console.info('Updated', path.relative(root, lockFile))
     }
   }
 
-  console.log('Done.')
+  console.info('Done.')
 }
 
-if (!process.env.CI) main(process.argv[3], process.argv[3]).catch(err => {
+if (!process.env.CI) main(process.argv[2], process.argv[3]).catch(err => {
   console.error(err + '')
   process.exitCode = 1
 })

@@ -3,7 +3,7 @@
 Do something under a custom registry, then rewrite them back to the default one.
 
 > [!NOTE]
-> It currently only works for `npm`, no `pnpm` or `bun` support.
+> It currently only works for `npm` and `bun`'s text lockfile, no `pnpm` support.
 
 ## Usage
 
